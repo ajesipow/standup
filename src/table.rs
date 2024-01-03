@@ -1,3 +1,4 @@
+use std::fs;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -50,7 +51,7 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
     fn calibrate(&mut self) -> Result<()> {
         info!("Calibrating");
         self.motor.up();
-        let mut current_height = self.sensor.get_current_height()?;
+        let mut current_height = self.sensor.current_height()?;
         // We subtract a bit to kick-start the while loop below
         let mut previous_height = current_height - Centimeter(1);
         // TODO add timeout
@@ -58,7 +59,7 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
             // Table is still moving
             sleep(Duration::from_millis(200));
             previous_height = current_height;
-            current_height = self.sensor.get_current_height()?;
+            current_height = self.sensor.current_height()?;
         }
         self.motor.stop();
         self.sensor.set_max_height(self.config.max_table_height)?;
@@ -71,12 +72,15 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
             // Table is still moving down
             sleep(Duration::from_millis(200));
             previous_height = current_height;
-            current_height = self.sensor.get_current_height()?;
+            current_height = self.sensor.current_height()?;
         }
         self.motor.stop();
         self.sensor.set_min_height(self.config.min_table_height)?;
 
-        // TODO save calibration data to file
+        let calibration_file = self.sensor.calibration_file();
+        let raw_calibration_data = toml::to_string(&self.sensor.calibration_data())?;
+        fs::write(calibration_file, raw_calibration_data)?;
+        debug!("Calibration data written to {calibration_file:?}");
 
         self.move_to_sitting()
     }
@@ -97,7 +101,7 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
             ));
         }
         info!("Moving to height {height_cm:?}");
-        let current_height = self.sensor.get_current_height()?;
+        let current_height = self.sensor.current_height()?;
         // We allow for some tolerance as moving the table is not so precise
         if height_cm - Centimeter(1) <= current_height
             && current_height <= height_cm + Centimeter(1)
@@ -108,7 +112,7 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
         // TODO add timeout
         if current_height < height_cm {
             self.motor.up();
-            while self.sensor.get_current_height()? < height_cm {
+            while self.sensor.current_height()? < height_cm {
                 sleep(Duration::from_millis(200));
             }
             self.motor.stop();
@@ -116,7 +120,7 @@ impl<S: DistanceSensor, M: Motor> Movement for StandingDesk<S, M> {
         // TODO add timeout
         if current_height > height_cm {
             self.motor.down();
-            while self.sensor.get_current_height()? > height_cm {
+            while self.sensor.current_height()? > height_cm {
                 sleep(Duration::from_millis(200));
             }
             self.motor.stop();

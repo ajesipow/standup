@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -30,6 +31,8 @@ pub(crate) struct SensorConfig {
     pub trigger_pin: u8,
     // The pin number listening for the distance sensor's echo signal
     pub echo_pin: u8,
+    // The calibration file for the sensor
+    pub calibration_file: PathBuf,
 }
 
 /// Configuration data for the standing desk motor.

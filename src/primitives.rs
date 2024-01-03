@@ -2,10 +2,11 @@ use std::ops::Add;
 use std::ops::Sub;
 
 use serde::Deserialize;
+use serde::Serialize;
 
 /// A reasonable unit for table height.
 /// The table cannot be higher than 255cm
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 pub(crate) struct Centimeter(pub u8);
 
 impl Centimeter {

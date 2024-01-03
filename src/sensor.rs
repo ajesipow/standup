@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -9,13 +12,15 @@ use rppal::gpio::Gpio;
 use rppal::gpio::InputPin;
 use rppal::gpio::OutputPin;
 use rppal::gpio::Trigger;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::config::SensorConfig;
 use crate::primitives::Centimeter;
 
 pub(crate) trait DistanceSensor {
     /// Takes a height measurement in centimeters.
-    fn get_current_height(&mut self) -> Result<Centimeter>;
+    fn current_height(&mut self) -> Result<Centimeter>;
 
     /// Sets the lowest height as reference for calibration.
     fn set_min_height(
@@ -28,38 +33,51 @@ pub(crate) trait DistanceSensor {
         &mut self,
         height: Centimeter,
     ) -> Result<()>;
+
+    fn calibration_file(&self) -> &Path;
+
+    fn calibration_data(&self) -> &SensorCalibrationData;
 }
 
 /// The HCSR04 sensor for measuring distances.
 pub(crate) struct HCSR04 {
+    calibration_file_path: PathBuf,
     calibration_data: SensorCalibrationData,
     trigger_pin: OutputPin,
     echo_pin: InputPin,
 }
 
-struct SensorCalibrationData {
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct SensorCalibrationData {
     // The minimum height we can observe
-    min_height: Centimeter,
+    pub min_height: Centimeter,
     // The duration of the echo in ms at minimum height
-    min_height_echo: Duration,
+    pub min_height_echo: Duration,
     // The max height we can observe
-    max_height: Centimeter,
+    pub max_height: Centimeter,
     // The duration of the echo in ms at max height
-    max_height_echo: Duration,
+    pub max_height_echo: Duration,
+}
+
+impl SensorCalibrationData {
+    /// Loads calibration data from a file.
+    pub(crate) fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let raw_data = fs::read_to_string(path)?;
+        let calibration = toml::from_str(&raw_data)?;
+        Ok(calibration)
+    }
 }
 
 impl HCSR04 {
-    /// Creates a new [HCSR04] with predefined calibration parameters.
+    /// Creates a new [HCSR04] with calibration parameters from the file.
     pub(crate) fn new(config: SensorConfig) -> Self {
-        // TODO read calibration data from file
         let gpio = Gpio::new().expect("gpio to be available");
+        let calibration_file_path = config.calibration_file;
+        let calibration_data = SensorCalibrationData::load(&calibration_file_path)
+            .expect("calibration data must be available");
         Self {
-            calibration_data: SensorCalibrationData {
-                min_height: Centimeter(40),
-                min_height_echo: Duration::from_micros(1166),
-                max_height: Centimeter(130),
-                max_height_echo: Duration::from_micros(3790),
-            },
+            calibration_file_path,
+            calibration_data,
             trigger_pin: gpio
                 .get(config.trigger_pin)
                 .expect("trigger pin be available")
@@ -108,7 +126,7 @@ impl HCSR04 {
 }
 
 impl DistanceSensor for HCSR04 {
-    fn get_current_height(&mut self) -> Result<Centimeter> {
+    fn current_height(&mut self) -> Result<Centimeter> {
         let echo_duration = self.measure_full_echo_duration()?;
         // We're interpolating the height from our calibration parameters
         let normalized_echo = (echo_duration - self.calibration_data.min_height_echo).as_micros()
@@ -146,5 +164,13 @@ impl DistanceSensor for HCSR04 {
         self.calibration_data.max_height_echo = echo_duration;
         self.calibration_data.max_height = height;
         Ok(())
+    }
+
+    fn calibration_file(&self) -> &Path {
+        &self.calibration_file_path
+    }
+
+    fn calibration_data(&self) -> &SensorCalibrationData {
+        &self.calibration_data
     }
 }

@@ -11,3 +11,4 @@ down_pin = 24
 [sensor]
 trigger_pin = 4
 echo_pin = 17
+calibration_file = "hcrso4_calibration.toml"
